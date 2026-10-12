@@ -5,8 +5,9 @@
  * module): CSV text in, a {@link ParseResult} out.
  *
  * - Never throws. Bad input fills `arrErrors` and leaves `arrRows` empty.
- * - Row numbers in errors are record numbers in the file, so the header row
- *   (when present) is row 1 and the first data row is row 2.
+ * - Row numbers in errors are the position of the record in the file, from 1,
+ *   counting blank lines. A leading blank line therefore shifts the header to
+ *   row 2. A quoted field that contains newlines still counts as one row.
  * - A column is typed "number" only if every value in it is numeric. A blank
  *   cell is not numeric, so a column with a blank becomes a "category" column
  *   and the blank is kept as an empty string.
@@ -24,6 +25,15 @@ import { COLUMN_TYPES } from "../contracts.js";
  *   When false, headers are generated as "column1", "column2", ...
  * @property {boolean} [boolInferTypes=true] Detect numeric columns. When
  *   false, every column is a "category" column.
+ *
+ * An option that is undefined or null falls back to its default.
+ */
+
+/**
+ * @typedef {object} RecordEntry
+ * @property {string[]} arrRecord Raw fields of one record.
+ * @property {number} numRow Position of the record in the file, from 1,
+ *   counting blank lines.
  */
 
 /** @type {Required<ParseOptions>} */
@@ -112,12 +122,13 @@ function isBlankRecord(arrRecord) {
 /**
  * Builds and validates the header list.
  *
- * @param {string[]} arrFirstRecord The first record in the file.
+ * @param {string[]} arrFirstRecord The first non-blank record in the file.
  * @param {boolean} boolHasHeader Whether that record contains headers.
+ * @param {number} numRow File row number of that record, used in errors.
  * @returns {{arrHeaders: string[], arrErrors: string[]}} Header names and any
  *   blank or duplicate header errors.
  */
-function buildHeaders(arrFirstRecord, boolHasHeader) {
+function buildHeaders(arrFirstRecord, boolHasHeader, numRow) {
   if (!boolHasHeader) {
     const arrGenerated = arrFirstRecord.map(
       (_strCell, numIndex) => `column${numIndex + 1}`,
@@ -133,9 +144,9 @@ function buildHeaders(arrFirstRecord, boolHasHeader) {
 
   arrHeaders.forEach((strHeader, numIndex) => {
     if (strHeader === "") {
-      arrErrors.push(`row 1: column ${numIndex + 1} has a blank name`);
+      arrErrors.push(`row ${numRow}: column ${numIndex + 1} has a blank name`);
     } else if (setSeen.has(strHeader)) {
-      arrErrors.push(`row 1: duplicate column name "${strHeader}"`);
+      arrErrors.push(`row ${numRow}: duplicate column name "${strHeader}"`);
     }
     setSeen.add(strHeader);
   });
@@ -148,7 +159,7 @@ function buildHeaders(arrFirstRecord, boolHasHeader) {
  * the layout module.
  *
  * @param {string} strCsv Raw CSV text.
- * @param {ParseOptions} [objOptions] Parsing options.
+ * @param {ParseOptions | null} [objOptions] Parsing options.
  * @returns {ParseResult} The parse result. Check `arrErrors` before use.
  * @example
  * const objParse = parseCsv("name,score\nAda,10\nLin,12");
@@ -164,11 +175,18 @@ export function parseCsv(strCsv, objOptions = {}) {
     return buildFailure(["input must be a string"]);
   }
 
-  const { strDelimiter, boolHasHeader, boolInferTypes } = {
-    ...objDefaultOptions,
-    ...objOptions,
-  };
-  if (strDelimiter.length !== 1 || /["\r\n]/.test(strDelimiter)) {
+  const strDelimiter =
+    objOptions?.strDelimiter ?? objDefaultOptions.strDelimiter;
+  const boolHasHeader =
+    objOptions?.boolHasHeader ?? objDefaultOptions.boolHasHeader;
+  const boolInferTypes =
+    objOptions?.boolInferTypes ?? objDefaultOptions.boolInferTypes;
+
+  if (
+    typeof strDelimiter !== "string" ||
+    strDelimiter.length !== 1 ||
+    /["\r\n]/.test(strDelimiter)
+  ) {
     return buildFailure([
       "strDelimiter must be a single character other than a quote or newline",
     ]);
@@ -180,29 +198,35 @@ export function parseCsv(strCsv, objOptions = {}) {
     return buildFailure(["unterminated quoted field"]);
   }
 
-  const arrRecords = objSplit.arrRecords.filter(
-    (arrRecord) => !isBlankRecord(arrRecord),
-  );
-  if (arrRecords.length === 0) {
+  // Number the records before dropping blank lines so errors match the file.
+  const arrEntries = objSplit.arrRecords
+    .map((arrRecord, numIndex) => ({ arrRecord, numRow: numIndex + 1 }))
+    .filter((objEntry) => !isBlankRecord(objEntry.arrRecord));
+  if (arrEntries.length === 0) {
     return { arrColumns: [], arrRows: [], arrErrors: [] };
   }
 
-  const objHeaders = buildHeaders(arrRecords[0], boolHasHeader);
+  const objHeaders = buildHeaders(
+    arrEntries[0].arrRecord,
+    boolHasHeader,
+    arrEntries[0].numRow,
+  );
   const { arrHeaders } = objHeaders;
   const arrErrors = [...objHeaders.arrErrors];
-  const arrDataRecords = boolHasHeader ? arrRecords.slice(1) : arrRecords;
-  const numFirstRow = boolHasHeader ? 2 : 1;
+  const arrDataEntries = boolHasHeader ? arrEntries.slice(1) : arrEntries;
 
-  arrDataRecords.forEach((arrRecord, numIndex) => {
-    if (arrRecord.length !== arrHeaders.length) {
+  arrDataEntries.forEach((objEntry) => {
+    if (objEntry.arrRecord.length !== arrHeaders.length) {
       arrErrors.push(
-        `row ${numIndex + numFirstRow}: expected ${arrHeaders.length} fields, found ${arrRecord.length}`,
+        `row ${objEntry.numRow}: expected ${arrHeaders.length} fields, found ${objEntry.arrRecord.length}`,
       );
     }
   });
   if (arrErrors.length > 0) {
     return buildFailure(arrErrors);
   }
+
+  const arrDataRecords = arrDataEntries.map((objEntry) => objEntry.arrRecord);
 
   /** @type {Column[]} */
   const arrColumns = arrHeaders.map((strField, numColumn) => {
