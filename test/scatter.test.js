@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { objScatter, buildScatter } from "../src/charts/scatter.js";
+import { objScatter } from "../src/charts/scatter.js";
+import { getChart } from "../src/registry.js";
 
 /** @type {import("../src/contracts.js").ParseResult} */
 const objParse = {
@@ -16,20 +17,42 @@ const objParse = {
   arrErrors: [],
 };
 
+/** @type {import("../src/contracts.js").Frame} */
+const objFrame = {
+  numWidth: 600,
+  numHeight: 400,
+  objMargin: { numTop: 40, numRight: 40, numBottom: 40, numLeft: 40 },
+};
+
+/** @type {import("../src/contracts.js").Scales} */
 const objFakeScales = {
-  fnX: (/** @type {number} */ numValue) => numValue * 10,
-  fnY: (/** @type {number} */ numValue) => 100 - numValue,
+  fnX: (value) => Number(value) * 10,
+  fnY: (value) => 100 - value,
 };
 
 /** @type {import("../src/contracts.js").ChartSpec} */
 const objSpec = {
   strChart: "scatter",
   objFields: { x: "height", y: "weight" },
-  objOptions: { objScales: objFakeScales },
 };
 
-test("registers with a number x slot and a number y slot", () => {
-  assert.equal(objScatter.strName, "scatter");
+/**
+ * Call fnBuild the way layout does, through the registry.
+ * @param {import("../src/contracts.js").ParseResult} objData
+ * @param {import("../src/contracts.js").ChartSpec} objChartSpec
+ * @param {import("../src/contracts.js").Scales} objScales
+ */
+function build(objData, objChartSpec, objScales) {
+  return getChart("scatter").fnBuild(
+    objData,
+    objChartSpec,
+    objFrame,
+    objScales,
+  );
+}
+
+test("registers as scatter with a number x slot and a number y slot", () => {
+  assert.equal(getChart("scatter"), objScatter);
   assert.deepEqual(objScatter.arrSlots, [
     { strSlot: "x", arrTypes: ["number"] },
     { strSlot: "y", arrTypes: ["number"] },
@@ -37,13 +60,13 @@ test("registers with a number x slot and a number y slot", () => {
 });
 
 test("returns one circle per row", () => {
-  const arrItems = buildScatter(objParse, objSpec);
+  const arrItems = build(objParse, objSpec, objFakeScales);
   assert.equal(arrItems.length, 3);
   assert.ok(arrItems.every((objItem) => objItem.strKind === "circle"));
 });
 
 test("positions come from the scales", () => {
-  const arrItems = buildScatter(objParse, objSpec);
+  const arrItems = build(objParse, objSpec, objFakeScales);
   assert.deepEqual(
     arrItems.map((objItem) => [objItem.numX, objItem.numY]),
     [
@@ -55,7 +78,7 @@ test("positions come from the scales", () => {
 });
 
 test("every circle has numR 4 and class point", () => {
-  const arrItems = buildScatter(objParse, objSpec);
+  const arrItems = build(objParse, objSpec, objFakeScales);
   for (const objItem of arrItems) {
     assert.equal(objItem.numR, 4);
     assert.equal(objItem.strClass, "point");
@@ -66,40 +89,28 @@ test("reads the columns named in objFields, not fixed names", () => {
   const arrCallsX = [];
   const arrCallsY = [];
   const objSpyScales = {
-    fnX: (/** @type {number} */ numValue) => {
-      arrCallsX.push(numValue);
-      return numValue;
+    fnX: (value) => {
+      arrCallsX.push(value);
+      return Number(value);
     },
-    fnY: (/** @type {number} */ numValue) => {
-      arrCallsY.push(numValue);
-      return numValue;
+    fnY: (value) => {
+      arrCallsY.push(value);
+      return value;
     },
   };
   /** @type {import("../src/contracts.js").ChartSpec} */
   const objSwapped = {
     strChart: "scatter",
     objFields: { x: "weight", y: "height" },
-    objOptions: { objScales: objSpyScales },
   };
 
-  buildScatter(objParse, objSwapped);
+  build(objParse, objSwapped, objSpyScales);
 
   assert.deepEqual(arrCallsX, [10, 20, 30]);
   assert.deepEqual(arrCallsY, [1, 2, 3]);
 });
 
 test("no rows gives no items", () => {
-  const arrItems = buildScatter({ ...objParse, arrRows: [] }, objSpec);
+  const arrItems = build({ ...objParse, arrRows: [] }, objSpec, objFakeScales);
   assert.deepEqual(arrItems, []);
-});
-
-test("throws when layout did not supply scales", () => {
-  assert.throws(
-    () => buildScatter(objParse, { ...objSpec, objOptions: undefined }),
-    /objScales is required/,
-  );
-  assert.throws(
-    () => buildScatter(objParse, { ...objSpec, objOptions: {} }),
-    /objScales is required/,
-  );
 });
