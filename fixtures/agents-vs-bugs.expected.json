@@ -1,0 +1,94 @@
+{
+  "arrColumns": [
+    {
+      "strField": "agent",
+      "strType": "category"
+    },
+    {
+      "strField": "day",
+      "strType": "number"
+    },
+    {
+      "strField": "bugs",
+      "strType": "number"
+    }
+  ],
+  "arrRows": [
+    {
+      "agent": "Agent A",
+      "day": 1,
+      "bugs": 4
+    },
+    {
+      "agent": "Agent A",
+      "day": 2,
+      "bugs": 7
+    },
+    {
+      "agent": "Agent A",
+      "day": 3,
+      "bugs": 5
+    },
+    {
+      "agent": "Agent A",
+      "day": 4,
+      "bugs": 9
+    },
+    {
+      "agent": "Agent A",
+      "day": 5,
+      "bugs": 12
+    },
+    {
+      "agent": "Agent B",
+      "day": 1,
+      "bugs": 2
+    },
+    {
+      "agent": "Agent B",
+      "day": 2,
+      "bugs": 3
+    },
+    {
+      "agent": "Agent B",
+      "day": 3,
+      "bugs": 6
+    },
+    {
+      "agent": "Agent B",
+      "day": 4,
+      "bugs": 6
+    },
+    {
+      "agent": "Agent B",
+      "day": 5,
+      "bugs": 8
+    },
+    {
+      "agent": "Agent C",
+      "day": 1,
+      "bugs": 6
+    },
+    {
+      "agent": "Agent C",
+      "day": 2,
+      "bugs": 5
+    },
+    {
+      "agent": "Agent C",
+      "day": 3,
+      "bugs": 7
+    },
+    {
+      "agent": "Agent C",
+      "day": 4,
+      "bugs": 4
+    },
+    {
+      "agent": "Agent C",
+      "day": 5,
+      "bugs": 10
+    }
+  ],
+  "arrErrors": []
+}
