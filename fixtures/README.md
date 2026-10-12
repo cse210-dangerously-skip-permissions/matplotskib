@@ -1,11 +1,6 @@
 # Fixtures
 
-Mock data and expected outputs. Data is static and immutable: no uploads, no editing in the browser.
-
-Each fixture is a pair:
-
-- `name.csv` is the input.
-- `name.expected.json` is the `ParseResult` the parser must produce for it (shape in `src/contracts.js`).
+Mock CSV inputs for the parser. Data is static and immutable: no uploads, no editing in the browser.
 
 ## CSV rules
 
