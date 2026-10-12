@@ -1,39 +1,29 @@
-// TODO: owner implements. See CONTRIBUTING.md.
 /**
  * @module parser
  *
- * In:  strCsv     - raw CSV text (RFC 4180 style: quoted fields, "" escapes,
- *                   CRLF/LF/CR line endings, newlines inside quotes).
- *      objOptions - optional, see {@link ParseOptions}.
+ * Implements the parser side of the shared contract (see the shared contracts
+ * module): CSV text in, a {@link ParseResult} out.
  *
- * Out: {@link ParsedTable}
- *      - arrHeaders:     column names, in file order
- *      - objColumnTypes: header -> "number" | "string"
- *      - arrRows:        one object per data row, keyed by header.
- *                        Empty cells become null. Cells in "number" columns
- *                        are numbers; everything else is a trimmed string.
- *
- * The parser knows nothing about scales, axes, or SVG. It never returns NaN.
- * Malformed input (unterminated quote, ragged rows, blank/duplicate headers)
- * throws an Error rather than guessing.
+ * - Never throws. Bad input fills `arrErrors` and leaves `arrRows` empty.
+ * - Row numbers in errors are record numbers in the file, so the header row
+ *   (when present) is row 1 and the first data row is row 2.
+ * - A column is typed "number" only if every value in it is numeric. A blank
+ *   cell is not numeric, so a column with a blank becomes a "category" column
+ *   and the blank is kept as an empty string.
  */
 
-/** @typedef {string | number | null} CellValue */
+import { COLUMN_TYPES } from "../contracts.js";
+
+/** @typedef {import("../contracts.js").ParseResult} ParseResult */
+/** @typedef {import("../contracts.js").Column} Column */
 
 /**
  * @typedef {object} ParseOptions
  * @property {string} [strDelimiter=","] Single-character field delimiter.
  * @property {boolean} [boolHasHeader=true] Treat the first record as headers.
  *   When false, headers are generated as "column1", "column2", ...
- * @property {boolean} [boolInferTypes=true] Convert fully numeric columns to
- *   numbers. When false, every non-empty cell stays a string.
- */
-
-/**
- * @typedef {object} ParsedTable
- * @property {string[]} arrHeaders
- * @property {Record<string, "number" | "string">} objColumnTypes
- * @property {Array<Record<string, CellValue>>} arrRows
+ * @property {boolean} [boolInferTypes=true] Detect numeric columns. When
+ *   false, every column is a "category" column.
  */
 
 /** @type {Required<ParseOptions>} */
@@ -46,16 +36,27 @@ const objDefaultOptions = Object.freeze({
 const regexNumber = /^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i;
 
 /**
+ * Builds the failure shape of a ParseResult.
+ *
+ * @param {string[]} arrErrors Human-readable error messages.
+ * @returns {ParseResult} A result with no columns and no rows.
+ */
+function buildFailure(arrErrors) {
+  return { arrColumns: [], arrRows: [], arrErrors };
+}
+
+/**
  * Splits CSV text into records of raw string fields.
  *
  * @param {string} strText CSV text with any BOM already removed.
  * @param {string} strDelimiter Single-character delimiter.
- * @returns {string[][]} Records of unprocessed fields.
- * @throws {Error} If a quoted field is never closed.
+ * @returns {{arrRecords: string[][], boolUnterminated: boolean}} Records, and
+ *   whether a quoted field was never closed.
  */
 function splitRecords(strText, strDelimiter) {
   /** @type {string[][]} */
   const arrRecords = [];
+  /** @type {string[]} */
   let arrFields = [];
   let strField = "";
   let boolInQuotes = false;
@@ -90,15 +91,12 @@ function splitRecords(strText, strDelimiter) {
     }
   }
 
-  if (boolInQuotes) {
-    throw new Error("Malformed CSV: unterminated quoted field.");
-  }
   if (strField !== "" || arrFields.length > 0) {
     arrFields.push(strField);
     arrRecords.push(arrFields);
   }
 
-  return arrRecords;
+  return { arrRecords, boolUnterminated: boolInQuotes };
 }
 
 /**
@@ -116,47 +114,54 @@ function isBlankRecord(arrRecord) {
  *
  * @param {string[]} arrFirstRecord The first record in the file.
  * @param {boolean} boolHasHeader Whether that record contains headers.
- * @returns {string[]} Header names.
- * @throws {Error} On a blank or duplicate header.
+ * @returns {{arrHeaders: string[], arrErrors: string[]}} Header names and any
+ *   blank or duplicate header errors.
  */
 function buildHeaders(arrFirstRecord, boolHasHeader) {
   if (!boolHasHeader) {
-    return arrFirstRecord.map((_strCell, numIndex) => `column${numIndex + 1}`);
+    const arrGenerated = arrFirstRecord.map(
+      (_strCell, numIndex) => `column${numIndex + 1}`,
+    );
+    return { arrHeaders: arrGenerated, arrErrors: [] };
   }
 
   const arrHeaders = arrFirstRecord.map((strCell) => strCell.trim());
+  /** @type {string[]} */
+  const arrErrors = [];
+  /** @type {Set<string>} */
   const setSeen = new Set();
 
-  for (const strHeader of arrHeaders) {
+  arrHeaders.forEach((strHeader, numIndex) => {
     if (strHeader === "") {
-      throw new Error("Malformed CSV: header row contains a blank name.");
-    }
-    if (setSeen.has(strHeader)) {
-      throw new Error(`Malformed CSV: duplicate header "${strHeader}".`);
+      arrErrors.push(`row 1: column ${numIndex + 1} has a blank name`);
+    } else if (setSeen.has(strHeader)) {
+      arrErrors.push(`row 1: duplicate column name "${strHeader}"`);
     }
     setSeen.add(strHeader);
-  }
+  });
 
-  return arrHeaders;
+  return { arrHeaders, arrErrors };
 }
 
 /**
- * Parses CSV text into a header list, column types, and keyed rows, ready
- * for the layout module.
+ * Parses CSV text into columns, keyed rows, and a list of errors, ready for
+ * the layout module.
  *
  * @param {string} strCsv Raw CSV text.
  * @param {ParseOptions} [objOptions] Parsing options.
- * @returns {ParsedTable} The parsed table (see module contract above).
- * @throws {TypeError} If strCsv is not a string.
- * @throws {Error} On malformed CSV or an invalid delimiter.
+ * @returns {ParseResult} The parse result. Check `arrErrors` before use.
  * @example
- * const { arrHeaders, arrRows } = parseCsv("month,sales\nJan,10\nFeb,12");
- * // arrHeaders -> ["month", "sales"]
- * // arrRows    -> [{ month: "Jan", sales: 10 }, { month: "Feb", sales: 12 }]
+ * const objParse = parseCsv("name,score\nAda,10\nLin,12");
+ * // objParse.arrColumns -> [
+ * //   { strField: "name", strType: "category" },
+ * //   { strField: "score", strType: "number" },
+ * // ]
+ * // objParse.arrRows -> [{ name: "Ada", score: 10 }, { name: "Lin", score: 12 }]
+ * // objParse.arrErrors -> []
  */
 export function parseCsv(strCsv, objOptions = {}) {
   if (typeof strCsv !== "string") {
-    throw new TypeError("parseCsv expects a string.");
+    return buildFailure(["input must be a string"]);
   }
 
   const { strDelimiter, boolHasHeader, boolInferTypes } = {
@@ -164,60 +169,65 @@ export function parseCsv(strCsv, objOptions = {}) {
     ...objOptions,
   };
   if (strDelimiter.length !== 1 || /["\r\n]/.test(strDelimiter)) {
-    throw new Error(
-      "strDelimiter must be a single non-quote, non-newline character.",
-    );
+    return buildFailure([
+      "strDelimiter must be a single character other than a quote or newline",
+    ]);
   }
 
   const strText = strCsv.replace(/^\uFEFF/, "");
-  const arrRecords = splitRecords(strText, strDelimiter).filter(
-    (arrRecord) => !isBlankRecord(arrRecord),
-  );
-
-  if (arrRecords.length === 0) {
-    return { arrHeaders: [], objColumnTypes: {}, arrRows: [] };
+  const objSplit = splitRecords(strText, strDelimiter);
+  if (objSplit.boolUnterminated) {
+    return buildFailure(["unterminated quoted field"]);
   }
 
-  const arrHeaders = buildHeaders(arrRecords[0], boolHasHeader);
+  const arrRecords = objSplit.arrRecords.filter(
+    (arrRecord) => !isBlankRecord(arrRecord),
+  );
+  if (arrRecords.length === 0) {
+    return { arrColumns: [], arrRows: [], arrErrors: [] };
+  }
+
+  const objHeaders = buildHeaders(arrRecords[0], boolHasHeader);
+  const { arrHeaders } = objHeaders;
+  const arrErrors = [...objHeaders.arrErrors];
   const arrDataRecords = boolHasHeader ? arrRecords.slice(1) : arrRecords;
+  const numFirstRow = boolHasHeader ? 2 : 1;
 
   arrDataRecords.forEach((arrRecord, numIndex) => {
     if (arrRecord.length !== arrHeaders.length) {
-      const numRecord = numIndex + (boolHasHeader ? 2 : 1);
-      throw new Error(
-        `Malformed CSV: record ${numRecord} has ${arrRecord.length} fields, expected ${arrHeaders.length}.`,
+      arrErrors.push(
+        `row ${numIndex + numFirstRow}: expected ${arrHeaders.length} fields, found ${arrRecord.length}`,
       );
     }
   });
+  if (arrErrors.length > 0) {
+    return buildFailure(arrErrors);
+  }
 
-  /** @type {Record<string, "number" | "string">} */
-  const objColumnTypes = {};
-  arrHeaders.forEach((strHeader, numColumn) => {
-    const arrValues = arrDataRecords
-      .map((arrRecord) => arrRecord[numColumn].trim())
-      .filter((strValue) => strValue !== "");
-    const boolIsNumeric =
+  /** @type {Column[]} */
+  const arrColumns = arrHeaders.map((strField, numColumn) => {
+    const boolIsNumber =
       boolInferTypes &&
-      arrValues.length > 0 &&
-      arrValues.every((strValue) => regexNumber.test(strValue));
-    objColumnTypes[strHeader] = boolIsNumeric ? "number" : "string";
+      arrDataRecords.length > 0 &&
+      arrDataRecords.every((arrRecord) =>
+        regexNumber.test(arrRecord[numColumn].trim()),
+      );
+    return {
+      strField,
+      strType: boolIsNumber ? COLUMN_TYPES.NUMBER : COLUMN_TYPES.CATEGORY,
+    };
   });
 
   const arrRows = arrDataRecords.map((arrRecord) => {
-    /** @type {Record<string, CellValue>} */
+    /** @type {Object<string, string | number>} */
     const objRow = {};
-    arrHeaders.forEach((strHeader, numColumn) => {
+    arrColumns.forEach((objColumn, numColumn) => {
       const strValue = arrRecord[numColumn].trim();
-      if (strValue === "") {
-        objRow[strHeader] = null;
-      } else if (objColumnTypes[strHeader] === "number") {
-        objRow[strHeader] = Number(strValue);
-      } else {
-        objRow[strHeader] = strValue;
-      }
+      objRow[objColumn.strField] =
+        objColumn.strType === COLUMN_TYPES.NUMBER ? Number(strValue) : strValue;
     });
     return objRow;
   });
 
-  return { arrHeaders, objColumnTypes, arrRows };
+  return { arrColumns, arrRows, arrErrors: [] };
 }
