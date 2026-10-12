@@ -269,3 +269,26 @@ test("throws when the size leaves no room to plot", () => {
     /width must be a number above 92/,
   );
 });
+
+test("whole-number data gets only whole-number ticks", () => {
+  // fnMakeTicks(1, 3) steps by 0.5; months 1.5 and 2.5 shouldn't be labelled.
+  const objScene = fnLayout(parseCsv("month,rain\n1,49\n2,36\n3,47"), {
+    strChart: "stub",
+    objFields: { x: "month", y: "rain" },
+  });
+  const arrXLabels = withClass(objScene.arrItems, "tick-label")
+    .filter(
+      (objItem) =>
+        /** @type {{strAnchor: string}} */ (objItem).strAnchor === "middle",
+    )
+    .map((objItem) => /** @type {{strText: string}} */ (objItem).strText);
+  assert.deepEqual(arrXLabels, ["1", "2", "3"]);
+});
+
+test("decimal data keeps its decimal ticks", () => {
+  const objScene = fnLayout(parseCsv("t,v\n0.1,1\n0.4,2"), {
+    strChart: "stub",
+    objFields: { x: "t", y: "v" },
+  });
+  assert.ok(textsWithClass(objScene.arrItems, "tick-label").includes("0.2"));
+});

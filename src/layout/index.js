@@ -90,7 +90,8 @@ function makeFrame(objSpec) {
 
 /**
  * Axis tick values for a slot: the nice ticks for a number column, which span exactly the
- * scale's domain, or each category in order of first appearance.
+ * scale's domain, or each category in order of first appearance. Whole-number columns keep
+ * only whole-number ticks.
  * @param {ParseResult} objParse
  * @param {string} strField
  * @returns {(string | number)[]}
@@ -109,7 +110,12 @@ function ticksFor(objParse, strField) {
     numMin = Math.min(numMin, Number(value));
     numMax = Math.max(numMax, Number(value));
   }
-  return fnMakeTicks(numMin, numMax);
+  const arrTicks = fnMakeTicks(numMin, numMax);
+  // Whole-number data (days, months, counts) gets no fractional ticks. This only drops
+  // labels and gridlines; the scale's domain still spans every tick from fnMakeTicks.
+  return arrValues.every((value) => Number.isInteger(value))
+    ? arrTicks.filter((numTick) => Number.isInteger(numTick))
+    : arrTicks;
 }
 
 /**
