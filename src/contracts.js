@@ -50,10 +50,11 @@ export const DEFAULTS = Object.freeze({
 
 /**
  * Pixel position from data value. Layout computes these once and hands them to the chart,
- * so axes and marks agree. A category x maps to the center of its band.
+ * so axes and marks agree. Both return absolute SVG coordinates with margins already
+ * applied, so charts put the result straight into numX / numY.
  * @typedef {object} Scales
- * @property {(value: string | number) => number} fnX
- * @property {(value: number) => number} fnY
+ * @property {(value: string | number) => number} fnX takes the number for a number column, or the category string for a category column; a category maps to the center of its band
+ * @property {(value: number) => number} fnY flipped: a bigger value gives a smaller y, since SVG y grows downward
  */
 
 /**
