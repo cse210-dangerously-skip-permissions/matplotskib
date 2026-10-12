@@ -54,7 +54,10 @@ function linearScale(arrValues, numStart, numEnd, boolFromZero) {
     numMin -= 1;
     numMax += 1;
   }
-  const numStep = niceStep(numMax - numMin, 5);
+  // Whole-number data (days, months, counts) never gets fractional ticks.
+  const numStep = arrValues.every(Number.isInteger)
+    ? Math.max(1, niceStep(numMax - numMin, 5))
+    : niceStep(numMax - numMin, 5);
   const numLow = Math.floor(numMin / numStep) * numStep;
   const numHigh = Math.ceil(numMax / numStep) * numStep;
   const arrTicks = [];

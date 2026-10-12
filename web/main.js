@@ -2,7 +2,7 @@
 // and shows each contract in the inspector.
 
 import { COLUMN_TYPES, DEFAULTS, SCENE_KINDS } from "../src/contracts.js";
-import { ARR_DATASETS, loadRaw } from "./datasets.js";
+import { ARR_DATASETS, guessSpec, loadRaw } from "./datasets.js";
 import {
   ARR_CHART_NAMES,
   OBJ_STAGE_STATUS,
@@ -44,6 +44,11 @@ const OBJ_TABS = {
 };
 
 const NUM_HOVER_RADIUS = 18;
+const NUM_MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+/** Built-in files plus anything uploaded this session, newest upload first. */
+const arrDatasets = [...ARR_DATASETS];
+let numUploads = 0;
 
 /** @type {Map<string, string>} raw text by dataset id */
 const mapRaw = new Map();
@@ -100,8 +105,8 @@ function plural(numCount, strWord) {
 /** @returns {import("./datasets.js").Dataset} */
 function currentDataset() {
   return (
-    ARR_DATASETS.find((objSet) => objSet.strId === objState.strDatasetId) ??
-    ARR_DATASETS[0]
+    arrDatasets.find((objSet) => objSet.strId === objState.strDatasetId) ??
+    arrDatasets[0]
   );
 }
 
@@ -168,7 +173,16 @@ function run() {
   /** @type {Scene | null} */
   let objScene = null;
   let strLayoutError = "";
-  if (objParse.arrErrors.length === 0) {
+  const objUnfillable = getChart(objState.strChart).arrSlots.find(
+    (objSlot) =>
+      !(/** @type {{bOptional?: boolean}} */ (objSlot).bOptional) &&
+      !objParse.arrColumns.some((objCol) =>
+        objSlot.arrTypes.includes(objCol.strType),
+      ),
+  );
+  if (objParse.arrErrors.length === 0 && objUnfillable) {
+    strLayoutError = `No column in this file fits "${objUnfillable.strSlot}", which takes ${objUnfillable.arrTypes.join(" or ")}`;
+  } else if (objParse.arrErrors.length === 0) {
     try {
       objScene = layout(objParse, objSpec);
     } catch (objError) {
@@ -193,8 +207,9 @@ function run() {
 // ---------- controls ----------
 
 function renderDatasets() {
-  byId("dataset-list").innerHTML = ARR_DATASETS.map(
-    (objSet) => `
+  byId("dataset-list").innerHTML = arrDatasets
+    .map(
+      (objSet) => `
       <label class="dataset" for="dataset-${objSet.strId}">
         <input type="radio" name="dataset" id="dataset-${objSet.strId}" value="${objSet.strId}"
           ${objSet.strId === objState.strDatasetId ? "checked" : ""} />
@@ -202,7 +217,8 @@ function renderDatasets() {
         <span class="dataset-about">${escapeHtml(objSet.strAbout)}</span>
         <span class="source source-${objSet.strSource}">${objSet.strSource}</span>
       </label>`,
-  ).join("");
+    )
+    .join("");
 }
 
 function renderChartPicker() {
@@ -270,7 +286,7 @@ function readSize(strId, numFallback) {
 
 /** @param {string} strId */
 async function selectDataset(strId) {
-  const objSet = ARR_DATASETS.find((objItem) => objItem.strId === strId);
+  const objSet = arrDatasets.find((objItem) => objItem.strId === strId);
   if (!objSet) return;
   objState.strDatasetId = strId;
   if (!mapRaw.has(strId)) {
@@ -304,12 +320,99 @@ function showLoadError(strMessage) {
     </div>`;
 }
 
+/**
+ * Show or clear the message under the upload control.
+ * @param {string} strMessage empty to clear
+ */
+function setUploadStatus(strMessage) {
+  const objStatus = byId("upload-status");
+  objStatus.textContent = strMessage;
+  objStatus.hidden = strMessage === "";
+}
+
+/**
+ * Add a CSV from the user's computer to the data list and draw it. The file never leaves
+ * the browser. Uploading a file with the same name again replaces the earlier one.
+ * @param {File} objFile
+ */
+async function addUpload(objFile) {
+  if (!/\.csv$/i.test(objFile.name) && objFile.type !== "text/csv") {
+    setUploadStatus(
+      `${objFile.name} isn't a CSV file. Choose a file ending in .csv.`,
+    );
+    return;
+  }
+  if (objFile.size > NUM_MAX_UPLOAD_BYTES) {
+    setUploadStatus(
+      `${objFile.name} is ${(objFile.size / 1024 / 1024).toFixed(1)} MB. Choose a CSV under 5 MB.`,
+    );
+    return;
+  }
+  let strRaw;
+  try {
+    strRaw = await objFile.text();
+  } catch {
+    setUploadStatus(`Couldn't read ${objFile.name}. Try choosing it again.`);
+    return;
+  }
+  const objParse = parse(strRaw);
+  const objExisting = arrDatasets.find(
+    (objSet) =>
+      objSet.strSource === "upload" && objSet.strPath === objFile.name,
+  );
+  /** @type {import("./datasets.js").Dataset} */
+  const objSet = {
+    strId: objExisting?.strId ?? `upload-${(numUploads += 1)}`,
+    strPath: objFile.name,
+    strSource: "upload",
+    strAbout: objParse.arrErrors.length
+      ? `Uploaded, ${plural(objParse.arrErrors.length, "error")}`
+      : `Uploaded, ${plural(objParse.arrRows.length, "row")} and ${plural(objParse.arrColumns.length, "column")}`,
+    objStartSpec: guessSpec(objParse),
+  };
+  if (objExisting) arrDatasets.splice(arrDatasets.indexOf(objExisting), 1);
+  arrDatasets.unshift(objSet);
+  mapRaw.set(objSet.strId, strRaw);
+  setUploadStatus("");
+  objState.strDatasetId = objSet.strId;
+  renderDatasets();
+  await selectDataset(objSet.strId);
+}
+
+/** File picker plus drag and drop anywhere on the page. */
+function wireUpload() {
+  const objZone = byId("upload-zone");
+  /** @param {DragEvent} objEvent */
+  const fnHasFiles = (objEvent) =>
+    Boolean(objEvent.dataTransfer?.types.includes("Files"));
+  window.addEventListener("dragover", (objEvent) => {
+    if (!fnHasFiles(objEvent)) return;
+    objEvent.preventDefault();
+    objZone.classList.add("is-dragging");
+  });
+  window.addEventListener("dragleave", (objEvent) => {
+    if (objEvent.relatedTarget === null)
+      objZone.classList.remove("is-dragging");
+  });
+  window.addEventListener("drop", (objEvent) => {
+    if (!fnHasFiles(objEvent)) return;
+    objEvent.preventDefault();
+    objZone.classList.remove("is-dragging");
+    const objFile = objEvent.dataTransfer?.files[0];
+    if (objFile) addUpload(objFile);
+  });
+}
+
 function wireControls() {
   const objForm = byId("controls");
   objForm.addEventListener("submit", (objEvent) => objEvent.preventDefault());
   objForm.addEventListener("change", (objEvent) => {
     const objTarget = /** @type {HTMLInputElement} */ (objEvent.target);
-    if (objTarget.name === "dataset") {
+    if (objTarget.id === "input-file") {
+      const objFile = objTarget.files?.[0];
+      objTarget.value = "";
+      if (objFile) addUpload(objFile);
+    } else if (objTarget.name === "dataset") {
       selectDataset(objTarget.value);
     } else if (objTarget.name === "chart") {
       objState.strChart = objTarget.value;
@@ -458,7 +561,11 @@ function renderStage() {
     objCanvas.innerHTML = `
       <div class="stage-message is-error">
         <h3>Layout can't build this chart</h3>
-        <p>${escapeHtml(objRun.strLayoutError)}. Pick a different column under Columns.</p>
+        <p>${escapeHtml(objRun.strLayoutError)}. ${
+          objRun.strLayoutError.startsWith("No column")
+            ? "Pick the other chart, or upload a file that has one."
+            : "Pick a different column under Columns."
+        }</p>
       </div>`;
     return;
   }
@@ -771,6 +878,7 @@ renderDatasets();
 renderChartPicker();
 syncInputs();
 wireControls();
+wireUpload();
 wireRail();
 wireStage();
 wireCopy();

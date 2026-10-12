@@ -24,8 +24,7 @@ function checkSlots(objParse, objSpec) {
   for (const objSlot of objChart.arrSlots) {
     const strField = objSpec.objFields[objSlot.strSlot];
     if (!strField) {
-      if (/** @type {{boolOptional?: boolean}} */ (objSlot).boolOptional)
-        continue;
+      if (/** @type {{bOptional?: boolean}} */ (objSlot).bOptional) continue;
       throw new Error(
         `${objSpec.strChart} needs a column for "${objSlot.strSlot}"`,
       );

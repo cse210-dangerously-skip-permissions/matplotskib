@@ -32,11 +32,12 @@ When a real module lands:
 ## Data
 
 - `../fixtures/agents-vs-bugs.csv` is the shared fixture.
+- Uploads are added to the top of the list for the current session.
 - `samples/` holds page-only files: a number-by-number scatter, a category x axis, and a file with two bad rows that shows the parser error state. Move any of them to `fixtures/` if the tests want them.
 
-## Planned: upload your own CSV
+## Upload your own CSV
 
-Once layout and the chart modules are real, the page gets an upload control (file picker and drag-and-drop). It reads the file in the browser and passes the text to `parseCsv`, and parser errors show the same way `broken.csv` does now. This conflicts with the "no uploads" rule in `fixtures/README.md`, so record the decision in the design doc's decision log first.
+Use **Upload a CSV** in the Data panel, or drop a file anywhere on the page. The file is read in the browser and never sent anywhere. It goes through the same `parseCsv`, so bad rows show the same error view as `broken.csv`. The page picks a starting chart from the column types (`guessSpec` in `datasets.js`), and you can change it from there. Files up to 5 MB; uploading a file with the same name replaces it.
 
 ## How the page styles a Scene
 

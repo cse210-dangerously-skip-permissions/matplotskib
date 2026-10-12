@@ -107,6 +107,20 @@
         <form class="controls" id="controls" autocomplete="off">
           <fieldset class="group">
             <legend>Data</legend>
+            <label class="upload" for="input-file" id="upload-zone">
+              <input type="file" id="input-file" accept=".csv,text/csv" />
+              <span class="upload-title">Upload a CSV</span>
+              <span class="upload-hint"
+                >Or drop one anywhere on the page. It stays in your
+                browser.</span
+              >
+            </label>
+            <p
+              class="upload-status"
+              id="upload-status"
+              role="status"
+              hidden
+            ></p>
             <div class="dataset-list" id="dataset-list"></div>
           </fieldset>
 
