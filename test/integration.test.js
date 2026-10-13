@@ -46,31 +46,23 @@ test("fixture to scatter: honors the spec's size", () => {
   assert.match(strSvg, /^<svg [^>]*width="800" height="300"/);
 });
 
-test(
-  "fixture to line: one line per agent",
-  { skip: "needs the line chart module (#17)" },
-  () => {
-    const strSvg = renderChart(STR_BUGS, {
-      strChart: "line",
-      objFields: { x: "day", y: "bugs", series: "agent" },
-      strTitle: "Bugs found per day",
-    });
-    assert.equal(countMarks(strSvg).numLines, 3);
-    assert.match(strSvg, /class="title">Bugs found per day</);
-  },
-);
+test("fixture to line: one line per agent", () => {
+  const strSvg = renderChart(STR_BUGS, {
+    strChart: "line",
+    objFields: { x: "day", y: "bugs", series: "agent" },
+    strTitle: "Bugs found per day",
+  });
+  assert.equal(countMarks(strSvg).numLines, 3);
+  assert.match(strSvg, /class="title">Bugs found per day</);
+});
 
-test(
-  "fixture to line: one line when there is no series",
-  { skip: "needs the line chart module (#17)" },
-  () => {
-    const strSvg = renderChart("weekday,minutes\nMon,14\nTue,22\nWed,19", {
-      strChart: "line",
-      objFields: { x: "weekday", y: "minutes" },
-    });
-    assert.equal(countMarks(strSvg).numLines, 1);
-  },
-);
+test("fixture to line: one line when there is no series", () => {
+  const strSvg = renderChart("weekday,minutes\nMon,14\nTue,22\nWed,19", {
+    strChart: "line",
+    objFields: { x: "weekday", y: "minutes" },
+  });
+  assert.equal(countMarks(strSvg).numLines, 1);
+});
 
 test("error: unknown chart", () => {
   assert.throws(
