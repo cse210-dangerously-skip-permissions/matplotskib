@@ -9,8 +9,8 @@
 //   });
 //   document.querySelector("#chart").innerHTML = strSvg;
 
+import "./charts/line.js";
 import "./charts/scatter.js";
-// TODO(#17): import "./charts/line.js"; so "line" registers.
 import { fnLayout } from "./layout/index.js";
 import { parseCsv } from "./parser/index.js";
 import { renderSvg } from "./svg/index.js";

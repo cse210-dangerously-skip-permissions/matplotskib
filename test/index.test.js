@@ -19,19 +19,15 @@ test("renders the fixture as a scatter", () => {
   assert.match(strSvg, />Bugs found per day</);
 });
 
-test(
-  "renders the fixture as a line",
-  { skip: "needs the line chart module (#17)" },
-  () => {
-    const strSvg = renderChart(STR_BUGS, {
-      strChart: "line",
-      objFields: { x: "day", y: "bugs", series: "agent" },
-    });
-    // One polyline per agent; layout's own polylines are grid, axis and tick.
-    const arrMarks = strSvg.match(/<polyline [^>]*class="(?!grid|axis|tick)/g);
-    assert.equal(arrMarks?.length, 3);
-  },
-);
+test("renders the fixture as a line", () => {
+  const strSvg = renderChart(STR_BUGS, {
+    strChart: "line",
+    objFields: { x: "day", y: "bugs", series: "agent" },
+  });
+  // One polyline per agent; layout's own polylines are grid, axis and tick.
+  const arrMarks = strSvg.match(/<polyline [^>]*class="(?!grid|axis|tick)/g);
+  assert.equal(arrMarks?.length, 3);
+});
 
 test("throws layout's message when the CSV has errors", () => {
   assert.throws(
